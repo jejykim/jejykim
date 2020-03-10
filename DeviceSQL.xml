@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.decision.v2x.era.mapper.DeviceMapper">
+
+	<select id="selectDevicePublicKey" resultType="map" parameterType="long">
+		select public_key, device_sn
+		from DeviceAndCertList 
+		where device_id = #{device_id};
+	</select>
+
+	<!-- 단말 목록 -->
+	<select id="selectDeviceList" resultType="egovMap" parameterType="deviceVO">
+		SELECT *
+		FROM
+			(SELECT *
+		        ,(SELECT code_description FROM DeviceIdTypeList WHERE code_id = d.device_id_type AND code_group_id = d.device_id_type_group) AS device_id_type_name
+		        ,(SELECT code_description FROM DeviceTypeList WHERE code_id = d.device_type AND code_group_id = d.device_type_group) AS device_type_name
+		        ,(CASE
+					WHEN d.device_cert_type = 'M' AND exists(SELECT * FROM CertificationList WHERE device_id = d.device_id AND cert_type_group = 'ECG028' AND cert_type_id != 2)
+					THEN '보안인증서 발급'
+					WHEN d.device_cert_type = 'M' AND not exists(SELECT * FROM CertificationList WHERE device_id = d.device_id AND cert_type_group = 'ECG028' AND cert_type_id != 2)
+					THEN '미발급'
+			        WHEN d.device_cert_type = 'U'
+					THEN '등록인증서 발급'
+				END) AS cert_condition
+			FROM devices d
+			WHERE 1=1
+			AND d.use_yn = 'Y'
+			<if test="device_id_type_group != null and device_id_type_group != ''">
+			AND
+				d.device_id_type_group = #{device_id_type_group}
+			</if>
+			
+			<if test="device_type != null and device_type != ''">
+			AND
+				d.device_type = #{device_type}
+			</if>
+			
+			<if test="device_name != null and device_name != ''">
+			AND
+				d.device_name LIKE CONCAT('%',#{device_name},'%')
+			</if>
+			
+			<if test="device_sn != null and device_sn != ''">
+			AND
+				d.device_sn LIKE CONCAT('%',#{device_sn},'%')
+			</if>
+			
+			<if test="start_time != null and start_time != '' and end_time != null and end_time != ''">
+			AND
+				d.create_date BETWEEN #{start_time} AND #{end_time}
+			</if>
+			ORDER BY
+				d.create_date DESC
+			) data
+		LIMIT #{page}, #{page_per_data}
+	</select>
+	
+	<!-- 단말 목록 Count -->
+	<select id="selectDeviceListCount" resultType="int" parameterType="deviceVO">
+		SELECT COUNT(*)
+		FROM devices d
+		WHERE 1=1
+		AND d.use_yn = 'Y'
+		<if test="device_id_type_group != null and device_id_type_group != ''">
+		AND
+			d.device_group_id = #{device_id_type_group}
+		</if>
+		
+		<if test="device_type != null and device_type != ''">
+		AND
+			d.device_type = #{device_type}
+		</if>
+		
+		<if test="device_name != null and device_name != ''">
+		AND
+			d.device_name LIKE CONCAT('%',#{device_name},'%')
+		</if>
+		
+		<if test="device_sn != null and device_sn != ''">
+		AND
+			d.device_sn LIKE CONCAT('%',#{device_sn},'%')
+		</if>
+		
+		<if test="start_time != null and start_time != '' and end_time != null and end_time != ''">
+		AND
+			d.create_date BETWEEN #{start_time} AND #{end_time}
+		</if>
+	</select>
+	
+	<!-- 단말 상세 -->
+	<select id="selectDeviceInfo" resultType="deviceVO" parameterType="deviceVO">
+		SELECT *
+			,(SELECT code_description FROM DeviceIdTypeList WHERE code_id = d.device_id_type AND code_group_id = d.device_id_type_group) AS device_id_type_name
+	        ,(SELECT code_description FROM DeviceTypeList WHERE code_id = d.device_type AND code_group_id = d.device_type_group) AS device_type_name
+		FROM devices d
+		WHERE d.device_id = #{device_id}
+	</select>
+	
+	<!-- 단말 중복 확인 -->
+	<select id="selectCheckDeviceSn" resultType="int" parameterType="String">
+		SELECT COUNT(*)
+		FROM devices
+		WHERE device_sn = #{device_sn}
+		AND use_yn = 'Y'
+	</select>
+	
+	<!-- 단말 추가 -->
+	<insert id="insertDevice" parameterType="deviceVO">
+		INSERT INTO devices
+		SET device_group_id = #{device_group_id}
+			,device_group_id_group = #{device_group_id_group}
+			,device_sn = #{device_sn}
+		    ,use_yn = 'Y'
+		    ,create_id = #{create_id}
+		    ,create_date = now()
+		    ,device_id_type = #{device_id_type}
+		    ,device_id_type_group = #{device_id_type_group}
+		    ,device_type = #{device_type}
+		    ,device_type_group = #{device_type_group}
+	    	,device_cert_type = #{device_cert_type}
+		    <if test="device_name != null and device_name != ''">
+		    	,device_name = #{device_name}
+		    </if>
+		    <if test="device_number != null and device_number != ''">
+		    	,device_number = #{device_number}
+		    </if>
+		    <if test="device_ver != null and device_ver != ''">
+		    	,device_ver = #{device_ver}
+		    </if>
+		    <if test="device_maker != null and device_maker != ''">
+		    	,device_maker = #{device_maker}
+		    </if>
+		    <if test="memo != null and memo != ''">
+		    	,memo = #{memo}
+		    </if>
+	</insert>
+	
+	<!-- 단말 수정 -->
+	<update id="updateDevice" parameterType="deviceVO">
+	
+		<if test="device_id != null and device_id != ''">
+			UPDATE devices
+			SET modify_date = now()
+				 
+				<if test="device_type != null and device_type != ''">
+					,device_type = #{device_type}
+					,device_type_group = #{device_type_group}
+				</if>
+				
+				<if test="device_maker != null and device_maker != ''">
+					,device_maker = #{device_maker}
+				</if>
+				
+				<if test="device_number != null and device_number != ''">
+					,device_number = #{device_number}
+				</if>
+				
+				<if test="device_name != null and device_name != ''">
+					,device_name = #{device_name}
+				</if>
+				
+				<if test="device_ver != null and device_ver != ''">
+					,device_ver = #{device_ver}
+				</if>
+				
+				<if test="memo != null and memo != ''">
+					,memo = #{memo}
+				</if>
+				
+			WHERE device_id = #{device_id}
+		</if>
+		
+	</update>
+
+	<!-- 단말 삭제 -->
+	<update id="deleteDevice" parameterType="long">
+		UPDATE devices
+		SET use_yn = 'N'
+			,modify_date = now()
+		WHERE device_id = #{device_id};
+	</update>
+	<update id="deletePublicKey" parameterType="long">		
+		update certificatesKey
+		set use_yn = 'N'
+			,modify_date = now()
+		where device_id = #{device_id};
+	</update>
+
+	<!-- 인증서 발급 여부 (1개) -->
+	<select id="checkIssueDevice" resultType="int" parameterType="long">
+		SELECT COUNT(*)
+		FROM DeviceAndCertList
+		WHERE <![CDATA[ device_id = #{device_id} ]]>
+		AND mapping = 'Y'
+	</select>
+	
+	<!-- 단말 ID 조회 -->
+	<select id="getDeviceId" resultType="String" parameterType="deviceVO">
+		SELECT device_id
+		FROM devices
+		WHERE device_sn = #{device_sn}
+		AND use_yn = 'Y'
+	</select>
+
+
+	<select id="selectSN" parameterType="String" resultType="deviceVO">
+		select *
+		from devices
+		where device_sn = #{device_sn} and use_yn = 'Y'
+	</select>
+
+
+</mapper>
