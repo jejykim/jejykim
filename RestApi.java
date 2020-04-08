@@ -1,4 +1,4 @@
-package com.decision.v2x.era.util.http;
+package com.decision.v2x.dcm.util.http;
 
 
 import java.util.HashMap;
@@ -7,7 +7,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import com.decision.v2x.era.util.convert.RestApiParameter;
+import com.decision.v2x.dcm.util.convert.RestApiParameter;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -447,7 +447,7 @@ public class RestApi extends iRestApi
 		{
 			//JSONArray arrRequestHash = new JSONArray();
 			
-			result = this.reqList();
+			result = this.reqList(strTitle);
 			arr = (JSONArray)result.get("users");
 			for(int i = 0; i<arr.size(); i++)
 			{
@@ -561,8 +561,9 @@ public class RestApi extends iRestApi
 		
 		try
 		{
-			OkHttpClient client = new OkHttpClient().newBuilder()
-				  .build();
+			//OkHttpClient client = new OkHttpClient().newBuilder()
+			//	  .build();
+			OkHttpClient client = getUnsafeOkHttpClient();
 				MediaType mediaType = MediaType.parse("multipart/form-data");
 				RequestBody body = new MultipartBody.Builder().setType(MultipartBody.FORM)
 				  .addFormDataPart("file",fileName,
@@ -1070,7 +1071,7 @@ public class RestApi extends iRestApi
 	public JSONObject certBlacklist(String publicKey)
 	{
 		JSONObject retval = new JSONObject();
-		final String URL = "/api/webui/cert/enr/revoke/" + publicKey;
+		final String URL = "/api/webui/cert/enr/revoke/insert/" + publicKey;
 		HashMap<String, String> header = new HashMap<String, String>();
 		
 		header.put("Accept", HEADER_ACCEPT_JSON);
@@ -1097,7 +1098,7 @@ public class RestApi extends iRestApi
 	public JSONObject certBlacklistRemove(String publicKey)
 	{
 		JSONObject retval = new JSONObject();
-		final String URL = "/api/webui/cert/enr/revoke/insert/" + publicKey;
+		final String URL = "/api/webui/cert/enr/revoke/delete/" + publicKey;
 		HashMap<String, String> header = new HashMap<String, String>();
 		
 		header.put("Accept", HEADER_ACCEPT_JSON);
@@ -1113,6 +1114,7 @@ public class RestApi extends iRestApi
 		{
 			retval.put("success", "N");
 			retval.put("msg", e.getMessage());
+			e.printStackTrace();
 		}
 
 		return retval;
