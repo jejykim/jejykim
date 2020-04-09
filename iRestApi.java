@@ -1,4 +1,4 @@
-package com.decision.v2x.era.util.http;
+package com.decision.v2x.dcm.util.http;
 
 import java.io.*;
 import java.net.*;
@@ -8,6 +8,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Set;
+import java.util.logging.Logger;
 
 import javax.net.ssl.*;
 
@@ -16,8 +17,8 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
-import com.decision.v2x.era.util.Exception.HttpUnauthorizedException;
-import com.decision.v2x.era.util.convert.RestApiParameter;
+import com.decision.v2x.dcm.util.Exception.HttpUnauthorizedException;
+import com.decision.v2x.dcm.util.convert.RestApiParameter;
 import com.sun.corba.se.impl.encoding.CodeSetConversion.BTCConverter;
 
 import okhttp3.*;
@@ -79,12 +80,12 @@ public class iRestApi
 		return true;
 	}
 	
-	public JSONObject DCMLogin() throws Exception
+	public JSONObject ERALogin() throws Exception
 	{
 		final String URL = "/api/webui/login";
 		HashMap<String, String> header = new HashMap<String, String>();
-		JSONObject data = this.m_Param.dcmLogin(this.m_ID, this.m_Pwd);
-		
+		JSONObject data = this.m_Param.eraLogin(this.m_ID, this.m_Pwd);
+
 		//header.put("Accept", HEADER_ACCEPT_JSON);
 		header.put("Content-Type", HEADERJSON);
 		String strResult = requestHttpPOST(URL, data, header);
@@ -95,6 +96,26 @@ public class iRestApi
 		this.jwtToken = retval.get("access_token").toString();
 		this.jwtReToken = retval.get("refresh_token").toString();
 		this.jwtTokenDate = new Date();
+		
+		return retval;
+	}
+	
+	// Refresh 토큰으로 access 토큰 요청
+	//api/webui/refresh
+	public JSONObject getAccessToken() throws Exception
+	{
+		final String URL = "/api/webui/refresh";
+		HashMap<String, String> header = new HashMap<String, String>();
+		JSONObject data = null;
+		
+		header.put("Content-Type", HEADERJSON);
+		header.put("Authorization", AUTHORIZATION_PREFIX + jwtToken);
+		String strResult = requestHttpPOST(URL, data, header);
+		
+		JSONParser jp = new JSONParser();
+		JSONObject retval = (JSONObject) jp.parse(strResult);
+		
+		this.jwtToken = retval.get("access_token").toString();
 		
 		return retval;
 	}
@@ -210,6 +231,8 @@ public class iRestApi
 		URL url = new URL(strUrl);
 		
 		HttpsURLConnection con = (HttpsURLConnection) url.openConnection();
+		con.setConnectTimeout(300000);
+		
 		/*
 		con.setHostnameVerifier(new HostnameVerifier() {
 			
@@ -225,6 +248,7 @@ public class iRestApi
 		
 		if(!this.jwtToken.isEmpty())
 		{
+			
 			if(this.jwtTokenDate != null)
 			{
 				Date now = new Date();
@@ -234,7 +258,7 @@ public class iRestApi
 				
 				if(result >= MAX_TOKEN_MINUTE)
 				{
-					this.jwtToken = this.jwtReToken;
+					this.ERALogin();
 				}
 			}
 			
@@ -269,9 +293,10 @@ public class iRestApi
 	public String requestHttpGET(String strUrl, String param, String headerAccept) 
 	{
 		StringBuffer response = new StringBuffer();
+		HashMap<Integer, Integer> error = initErrorData();
 		try 
 		{
-			HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);			
+			HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);
 						
 			if(!(jwtToken.isEmpty() || jwtToken == null)) 
 			{
@@ -288,6 +313,33 @@ public class iRestApi
 			}
 						
 			int responseCode = con.getResponseCode();
+			
+			/*=============================================*/
+			// api 재로그인 소스 (추가자 : 김진열)
+			if(responseCode == 401) {
+				this.Error(responseCode, error);
+				
+				this.getAccessToken();
+				
+				con = this.getHttpsConnection(IP + strUrl, true);
+				
+				if(!(jwtToken.isEmpty() || jwtToken == null)) 
+				{
+					con.setRequestProperty("Authorization", AUTHORIZATION_PREFIX + jwtToken);
+				}
+				
+				if(!(headerAccept.isEmpty() || headerAccept == null)) 
+				{
+					con.setRequestProperty("Accept", headerAccept);
+					if(!headerAccept.equals(HEADERFORM)) 
+					{
+						con.setRequestProperty("content-type", headerAccept);
+					}
+				}
+				
+				responseCode = con.getResponseCode();
+			}
+			/*=============================================*/
 			
 			BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
 			
@@ -335,7 +387,7 @@ public class iRestApi
 		{
 			try 
 			{
-				HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);			
+				HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);
 				
 				if(headers != null)
 				{
@@ -349,6 +401,28 @@ public class iRestApi
 				
 				
 				responseCode = con.getResponseCode();
+				
+				/*=============================================*/
+				// api 재로그인 소스 (추가자 : 김진열)
+				if(responseCode == 401) {
+					this.Error(responseCode, error);
+					
+					this.getAccessToken();
+					
+					con = this.getHttpsConnection(IP + strUrl, true);
+					if(headers != null)
+					{
+						Set<String> keys = headers.keySet(); 
+						for(String key : keys)
+						{
+							String item = headers.get(key);
+							con.setRequestProperty(key, item);
+						}
+					}
+					
+					responseCode = con.getResponseCode();
+				}
+				/*=============================================*/
 				
 				BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
 				
@@ -415,7 +489,37 @@ public class iRestApi
 				}
 				
 				responseCode = con.getResponseCode();
-				//System.out.println(responseCode);
+				
+				/*=============================================*/
+				// api 재로그인 소스 (추가자 : 김진열)
+				if(responseCode == 401) {
+					this.Error(responseCode, error);
+					
+					this.getAccessToken();
+					
+					con = this.getHttpsConnection(getIP() + strUrl, false);
+					if(headers != null)
+					{
+						Set<String> keys = headers.keySet(); 
+						for(String key : keys)
+						{
+							String item = headers.get(key);
+							con.setRequestProperty(key, item);
+						}
+					}
+					
+					if(param != null)
+					{
+						DataOutputStream wr = new DataOutputStream(con.getOutputStream());
+						wr.writeBytes(param.toString());
+						wr.flush();
+						wr.close();
+					}
+					
+					responseCode = con.getResponseCode();
+				}
+				/*=============================================*/
+				
 				InputStream is = con.getInputStream();
 				
 				if(is != null)
@@ -485,7 +589,38 @@ public class iRestApi
 				}
 				
 				responseCode = con.getResponseCode();
-				//System.out.println(responseCode);
+
+				/*=============================================*/
+				// api 재로그인 소스 (추가자 : 김진열)
+				
+				if(responseCode == 401) {
+					this.Error(responseCode, error);
+					
+					this.getAccessToken();
+					
+					con = this.getHttpsConnection(getIP() + strUrl, false);
+					if(headers != null)
+					{
+						Set<String> keys = headers.keySet(); 
+						for(String key : keys)
+						{
+							String item = headers.get(key);
+							con.setRequestProperty(key, item);
+						}
+					}
+					
+					if(param != null)
+					{
+						DataOutputStream wr = new DataOutputStream(con.getOutputStream());
+						wr.writeBytes(param);
+						wr.flush();
+						wr.close();
+					}
+					
+					responseCode = con.getResponseCode();
+				}
+				/*=============================================*/
+				
 				InputStream is = con.getInputStream();
 				
 				if(is != null)
@@ -587,12 +722,12 @@ public class iRestApi
 				}
 				else
 				{
-					this.DCMLogin();
+					this.ERALogin();
 				}
 			}
 			else
 			{
-				this.DCMLogin();				
+				this.ERALogin();				
 			}
 			
 			error.put(code, ++cnt);
@@ -725,6 +860,8 @@ public class iRestApi
 		StringBuffer response = new StringBuffer();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		JSONObject retval = new JSONObject();
+		HashMap<Integer, Integer> error = initErrorData();
+		
 		int responseCode = 0;
 		try 
 		{
@@ -749,6 +886,38 @@ public class iRestApi
 			}
 			
 			responseCode = con.getResponseCode();
+			
+			/*=============================================*/
+			// api 재로그인 소스 (추가자 : 김진열)
+			if(responseCode == 401) {
+				this.Error(responseCode, error);
+				
+				this.getAccessToken();
+				
+				con = this.getHttpsConnection(this.getIP() + strUrl, false);	
+				if(headers != null)
+				{
+					Set<String> keys = headers.keySet(); 
+					for(String key : keys)
+					{
+						String item = headers.get(key);
+						con.setRequestProperty(key, item);
+					}
+				}
+				
+				if(param != null)
+				{
+					OutputStream os = con.getOutputStream();
+					os.write(param.toString().getBytes());
+					
+					os.flush();
+					os.close();
+				}
+				
+				responseCode = con.getResponseCode();
+			}
+			/*=============================================*/
+			
 			InputStream is = con.getInputStream();
 			
 			byte[] buffer = new byte[1024];
@@ -926,10 +1095,12 @@ public class iRestApi
 		StringBuffer response = new StringBuffer();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		JSONObject retval = new JSONObject();
+		HashMap<Integer, Integer> error = initErrorData();
+		
 		int responseCode = 0;
 		try 
 		{
-			HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);	
+			HttpsURLConnection con = this.getHttpsConnection(IP + strUrl, true);
 			if(headers != null)
 			{
 				Set<String> keys = headers.keySet(); 
@@ -941,6 +1112,29 @@ public class iRestApi
 			}
 			
 			responseCode = con.getResponseCode();
+			
+			/*=============================================*/
+			// api 재로그인 소스 (추가자 : 김진열)
+			if(responseCode == 401) {
+				this.Error(responseCode, error);
+				
+				this.getAccessToken();
+				
+				con = this.getHttpsConnection(IP + strUrl, true);
+				if(headers != null)
+				{
+					Set<String> keys = headers.keySet(); 
+					for(String key : keys)
+					{
+						String item = headers.get(key);
+						con.setRequestProperty(key, item);
+					}
+				}
+				
+				responseCode = con.getResponseCode();
+			}
+			/*=============================================*/
+			
 			InputStream is = con.getInputStream();
 			
 			byte[] buffer = new byte[1024];
@@ -968,8 +1162,8 @@ public class iRestApi
 		return retval;
 	}
 	
-	/*
-	private static OkHttpClient getUnsafeOkHttpClient() 
+	///*
+	public static OkHttpClient getUnsafeOkHttpClient() 
 	{
 		  try 
 		  {
